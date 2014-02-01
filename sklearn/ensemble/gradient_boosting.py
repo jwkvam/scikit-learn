@@ -386,19 +386,23 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
                 if last_group != g:
                     end_ix = i
                     ix = np.argsort(-pred[start_ix:end_ix, 0])
-                    tmp_ndcg = _ndcg(y[ix + start_ix][:self.max_rank],
-                                     np.sort(y[start_ix:end_ix])[::-1][:self.max_rank])
-                    if not np.isnan(tmp_ndcg):
-                        s_ndcg += tmp_ndcg
+                    discount = np.log(np.arange(2, 2 + min(len(ix), self.max_rank)))
+                    max_dcg = np.sum(np.sort(y[start_ix:end_ix])[::-1][:self.max_rank] /
+                                     discount)
+                    if max_dcg != 0:
+                        dcg = np.sum(y[ix + start_ix][:self.max_rank] / discount)
+                        s_ndcg += dcg / max_dcg
                         n_group += 1
                     start_ix = i
                     last_group = g
 
             ix = np.argsort(-pred[start_ix:, 0])
-            tmp_ndcg = _ndcg(y[ix + start_ix][:self.max_rank],
-                             np.sort(y[start_ix:])[::-1][:self.max_rank])
-            if not np.isnan(tmp_ndcg):
-                s_ndcg += tmp_ndcg
+            discount = np.log(np.arange(2, 2 + min(len(ix), self.max_rank)))
+            max_dcg = np.sum(np.sort(y[start_ix:])[::-1][:self.max_rank] /
+                             discount)
+            if max_dcg != 0:
+                dcg = np.sum(y[ix + start_ix][:self.max_rank] / discount)
+                s_ndcg += dcg / max_dcg
                 n_group += 1
             ndcg = s_ndcg / n_group
         return ndcg
