@@ -401,7 +401,7 @@ def _max_dcg(all32_64_t [:] y_sorted):
 
 
 def _lambda(all32_64_t [::1] y_true, double [:, ::1] y_pred,
-            max_rank):
+            max_rank, max_dcg_cache):
     """Computes the gradient and second derivatives for NDCG
 
     This part of the LambdaMART algorithm.
@@ -419,7 +419,10 @@ def _lambda(all32_64_t [::1] y_true, double [:, ::1] y_pred,
 
     if max_rank is None:
         max_rank = len(y_true)
-    max_dcg = _max_dcg(np.sort(y_true)[::-1][:max_rank])
+    if max_dcg_cache is None:
+        max_dcg = _max_dcg(np.sort(y_true)[::-1][:max_rank])
+    else:
+        max_dcg = max_dcg_cache
     cdef double ndcg = 0
     if max_dcg != 0:
         for i in range(max_rank):

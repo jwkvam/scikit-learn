@@ -367,6 +367,7 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
             assert max_rank > 0
         self.max_rank = max_rank
         self.weights = None
+        self.max_dcg = {}
 
     def init_estimator(self):
         return MeanEstimator()
@@ -385,18 +386,25 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
             for i, g in enumerate(group[1:], start=1):
                 if last_group != g:
                     end_ix = i
-                    ix = np.argsort(-pred[start_ix:end_ix, 0])
+                    ix = np.lexsort((y[start_ix:end_ix], -pred[start_ix:end_ix, 0]))
+                    if self.max_rank is None:
+                        self.max_rank = len(ix)
                     discount = np.log(np.arange(2, 2 + min(len(ix), self.max_rank)))
-                    max_dcg = np.sum(np.sort(y[start_ix:end_ix])[::-1][:self.max_rank] /
-                                     discount)
-                    if max_dcg != 0:
+                    if last_group not in self.max_dcg:
+                        self.max_dcg[last_group] = np.sum(np.sort(y[start_ix:end_ix])[::-1][:self.max_rank] / discount)
+                    if self.max_dcg[last_group] != 0:
                         dcg = np.sum(y[ix + start_ix][:self.max_rank] / discount)
-                        s_ndcg += dcg / max_dcg
+                        s_ndcg += dcg / self.max_dcg[last_group]
                         n_group += 1
+                    # else:
+                    #     s_ndcg += 0
+                    #     n_group += 1
                     start_ix = i
                     last_group = g
 
-            ix = np.argsort(-pred[start_ix:, 0])
+            ix = np.lexsort((y[start_ix:], -pred[start_ix:, 0]))
+            if self.max_rank is None:
+                self.max_rank = len(ix)
             discount = np.log(np.arange(2, 2 + min(len(ix), self.max_rank)))
             max_dcg = np.sum(np.sort(y[start_ix:])[::-1][:self.max_rank] /
                              discount)
@@ -404,6 +412,9 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
                 dcg = np.sum(y[ix + start_ix][:self.max_rank] / discount)
                 s_ndcg += dcg / max_dcg
                 n_group += 1
+            # else:
+            #     s_ndcg += 0
+            #     n_group += 1
             ndcg = s_ndcg / n_group
         return ndcg
 
@@ -424,12 +435,13 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
             grad = tmp_grad[inv_ix]
             self.weights = tmp_weights[inv_ix]
         else:
+            max_dcg = None
             last_q = group[0]
             start_ix = 0
             for i, q in enumerate(group[1:]):
                 if last_q != q:
                     end_ix = i + 1
-                    ix = np.argsort(-y_pred[start_ix:end_ix, 0])
+                    ix = np.lexsort((y_true[start_ix:end_ix], -y_pred[start_ix:end_ix, 0]))
 
                     inv_ix = np.empty_like(ix)
                     for j, x in enumerate(ix):
@@ -437,15 +449,19 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
 
                     # sort by current score before passing
                     # and then remap the return values
+                    if last_q in self.max_dcg:
+                        max_dcg = self.max_dcg[last_q]
+                    else:
+                        None
                     tmp_grad, tmp_weights = _lambda(y_true[ix + start_ix],
                                                     y_pred[ix + start_ix],
-                                                    self.max_rank)
+                                                    self.max_rank, max_dcg)
                     grad[start_ix:end_ix] = tmp_grad[inv_ix]
                     self.weights[start_ix:end_ix] = tmp_weights[inv_ix]
                     start_ix = i + 1
                     last_q = q
 
-            ix = np.argsort(-y_pred[start_ix:, 0])
+            ix = np.lexsort((y_true[start_ix:], -y_pred[start_ix:, 0]))
 
             inv_ix = np.empty_like(ix)
             for j, x in enumerate(ix):
@@ -455,7 +471,7 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
             # values
             tmp_grad, tmp_weights = _lambda(y_true[ix + start_ix],
                                             y_pred[ix + start_ix],
-                                            self.max_rank)
+                                            self.max_rank, None)
             grad[start_ix:] = tmp_grad[inv_ix]
             self.weights[start_ix:] = tmp_weights[inv_ix]
 
@@ -466,7 +482,7 @@ class NormalizedDiscountedCumulativeGain(RegressionLossFunction):
         terminal_region = np.where(terminal_regions == leaf)[0]
         num = np.sum(residual.take(terminal_region, axis=0))
         den = np.sum(self.weights.take(terminal_region, axis=0))
-        tree.value[leaf, 0, 0] = ((num + np.finfo(float).eps) /
+        tree.value[leaf, 0, 0] = ((num) /  # + np.finfo(float).eps) /
                                   (den + np.finfo(float).eps))
 
 
